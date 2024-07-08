@@ -28,3 +28,4 @@ pip install -r requirements.txt
 ```shell
 python main.py
 ```
+4. Close window on `q` or `esc`
