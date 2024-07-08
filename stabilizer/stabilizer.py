@@ -76,9 +76,6 @@ class Stabilizer:
         if curr_pts is not None:
             prev_pts, _, _ = cv2.calcOpticalFlowPyrLK(self.__prev_frame, gray, curr_pts, nextPts=None)
             if prev_pts.shape[0] >= 4 and prev_pts.shape[0] >= 4:
-                # x, y = (prev_pts - curr_pts)[0][0]
-                # if x >= 100 or y >= 100 or x <= -100 or y <= -100:
-                #     print((prev_pts - curr_pts)[0][0])
                 h, _ = cv2.findHomography(curr_pts, prev_pts, cv2.RANSAC, 5.0)
                 if h is not None:
                     self.__buffer.append(np.dot(h, self.__buffer[-1]))  # accumulate rotation matrix
