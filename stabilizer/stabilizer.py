@@ -26,6 +26,7 @@ class Stabilizer:
         # camera
         cam = self.__pipeline.createColorCamera()
         cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+        cam.setFps(60.0)
         self.__w = cam.getResolutionWidth()
         self.__h = cam.getResolutionHeight()
         self.__preview_mode = preview_mode
@@ -68,22 +69,48 @@ class Stabilizer:
             cv2.destroyAllWindows()
 
     def stabilize_frame(self, frame: np.ndarray) -> np.ndarray:
-        self.estimate_motion(frame)
-        return self.smooth_and_warp(frame)
+        """
+            Stabilize input frame. If warped frame has more than BP_THRESHOLD
+            black frames, then return cropped original frame, otherwise return warped frame.
+        """
+        if self.estimate_motion(frame) is True:
+            t_frame = self.smooth_and_warp(frame)
+            if self.black_pix_count(t_frame) < BP_THRESHOLD:
+                return t_frame
+        return self.crop_frame(np.copy(frame))
 
-    def estimate_motion(self, frame: np.ndarray) -> None:
+    def black_pix_count(self, frame: np.ndarray) -> float:
+        """
+            Calculate count of black pixels in input image in percents.
+
+            Returns:
+                  float - from 0 to 100
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        bp_count = np.sum(gray == 0)
+        in_percent = (bp_count / (self.__h * self.__w)) * 100
+        return in_percent
+
+    def estimate_motion(self, frame: np.ndarray) -> bool:
         """
             Detect feature points in the current frame. Using this points,
             calculate optical flow between current and previous frames (find this points
             in the previous frame). Using points from previous frames and current frame
             find homography 3x3 rotation matrix. Compute accumulate rotation matrix for this frame
             and add it on the end of the buffer.
+
+            Returns:
+                bool - True if distance between current and previous frames is
+                in interval (MIN_DISTANCE, MAX_DISTANCE), otherwise False.
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         curr_pts = cv2.goodFeaturesToTrack(gray, **FEATURE_PARAMS)
         if curr_pts is not None:
             prev_pts, _, _ = cv2.calcOpticalFlowPyrLK(self.__prev_frame, gray, curr_pts, nextPts=None)
             if prev_pts.shape[0] >= 4 and prev_pts.shape[0] >= 4:
+                x, y = (prev_pts - curr_pts)[0][0]
+                if any([x, y]) not in range(MIN_DISTANCE, MAX_DISTANCE):
+                    return False  # distance between two frames is too big
                 h, _ = cv2.findHomography(curr_pts, prev_pts, cv2.RANSAC, 5.0)
                 if h is not None:
                     self.__buffer.append(np.dot(h, self.__buffer[-1]))  # accumulate rotation matrix
@@ -97,6 +124,7 @@ class Stabilizer:
                 self.__buffer[i] = np.dot(self.__buffer[i], inv)
 
         self.__prev_frame = gray
+        return True
 
     def smooth_and_warp(self, frame: np.ndarray) -> np.ndarray:
         """
