@@ -14,6 +14,14 @@ from stabilizer.settings import *
 
 class Stabilizer:
     def __init__(self, preview_mode: bool = False):
+        """
+            Initialize the stabilizer
+
+            Parameter:
+                preview_mode - bool - `True` for running aplication in preview mode, where user can
+                see original and stabilized video, but video has resolution PREVIEW_RESOLUTION defined in settings.py.
+                `False` for running in basic mode where user can see only stabilized video in 1080p.
+        """
         self.__pipeline = dai.Pipeline()
         # camera
         cam = self.__pipeline.createColorCamera()
