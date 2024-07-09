@@ -35,18 +35,21 @@ class Stabilizer:
         xout_video = self.__pipeline.createXLinkOut()
         xout_video.setStreamName("video")
 
+        # stabilization
+        self.__prev_frame = None
+        self.__buffer: deque = deque([np.identity(3)])
+        self.__bp_threshold = BP_THRESHOLD
+        self.__skip_warp = BUFFER_SIZE
+
         # preview mode
         if self.__preview_mode is True:
             self.__w = PREVIEW_RESOLUTION[0]
             self.__h = PREVIEW_RESOLUTION[1]
             cam.setPreviewSize(self.__w, self.__h)
             cam.preview.link(xout_video.input)
+            self.__bp_threshold = BP_THRESHOLD_VIEW
         else:
             cam.video.link(xout_video.input)
-
-        # stabilization
-        self.__prev_frame = None
-        self.__buffer: deque = deque([np.identity(3)])
 
     def receive_frame(self, video_queue: dai.DataOutputQueue) -> np.ndarray:
         """Receive one frame from DataOutputQueue."""
@@ -71,12 +74,21 @@ class Stabilizer:
     def stabilize_frame(self, frame: np.ndarray) -> np.ndarray:
         """
             Stabilize input frame. If warped frame has more than BP_THRESHOLD
-            black frames, then return cropped original frame, otherwise return warped frame.
+            black frames, then return cropped original frame and update buffer,
+            otherwise return warped frame. After long camera move, return cropped original frame
+            for more smoothed transition between the original frames and warped frames.
         """
-        if self.estimate_motion(frame) is True:
-            t_frame = self.smooth_and_warp(frame)
-            if self.black_pix_count(t_frame) < BP_THRESHOLD:
-                return t_frame
+        self.estimate_motion(frame)
+        t_frame = self.smooth_and_warp(frame)
+        if self.black_pix_count(t_frame) < self.__bp_threshold:
+            if self.__skip_warp != 0:
+                self.__skip_warp -= 1
+                return self.crop_frame(np.copy(frame))
+            return t_frame
+
+        self.__buffer.clear()
+        self.__buffer.append(np.identity(3))
+        self.__skip_warp = BUFFER_SIZE
         return self.crop_frame(np.copy(frame))
 
     def black_pix_count(self, frame: np.ndarray) -> float:
@@ -91,7 +103,7 @@ class Stabilizer:
         in_percent = (bp_count / (self.__h * self.__w)) * 100
         return in_percent
 
-    def estimate_motion(self, frame: np.ndarray) -> bool:
+    def estimate_motion(self, frame: np.ndarray) -> None:
         """
             Detect feature points in the current frame. Using this points,
             calculate optical flow between current and previous frames (find this points
@@ -108,9 +120,6 @@ class Stabilizer:
         if curr_pts is not None:
             prev_pts, _, _ = cv2.calcOpticalFlowPyrLK(self.__prev_frame, gray, curr_pts, nextPts=None)
             if prev_pts.shape[0] >= 4 and prev_pts.shape[0] >= 4:
-                x, y = (prev_pts - curr_pts)[0][0]
-                if any([x, y]) not in range(MIN_DISTANCE, MAX_DISTANCE):
-                    return False  # distance between two frames is too big
                 h, _ = cv2.findHomography(curr_pts, prev_pts, cv2.RANSAC, 5.0)
                 if h is not None:
                     self.__buffer.append(np.dot(h, self.__buffer[-1]))  # accumulate rotation matrix
@@ -124,7 +133,6 @@ class Stabilizer:
                 self.__buffer[i] = np.dot(self.__buffer[i], inv)
 
         self.__prev_frame = gray
-        return True
 
     def smooth_and_warp(self, frame: np.ndarray) -> np.ndarray:
         """
