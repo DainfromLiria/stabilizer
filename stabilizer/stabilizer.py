@@ -110,10 +110,6 @@ class Stabilizer:
             in the previous frame). Using points from previous frames and current frame
             find homography 3x3 rotation matrix. Compute accumulate rotation matrix for this frame
             and add it on the end of the buffer.
-
-            Returns:
-                bool - True if distance between current and previous frames is
-                in interval (MIN_DISTANCE, MAX_DISTANCE), otherwise False.
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         curr_pts = cv2.goodFeaturesToTrack(gray, **FEATURE_PARAMS)
