@@ -1,5 +1,5 @@
 # Real-time video stabilization
-
+[Example](examples/example3.mp4)
 >[NOTE] Now works ONLY `stabilizer` package. `stabilizer_v2` is in development!
 
 ## About
